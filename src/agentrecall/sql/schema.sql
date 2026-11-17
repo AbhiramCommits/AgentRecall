@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS memory_entries (
     claim          text NOT NULL,
     body           text,
     embedding      vector(384),
-    source_doc_id  text NULL REFERENCES source_docs(id),
+    source_doc_id  text NULL REFERENCES source_docs(id) ON DELETE SET NULL,
     session_id     text NULL,
     version        int NOT NULL DEFAULT 1,
     status         text NOT NULL DEFAULT 'active',
@@ -65,6 +65,12 @@ CREATE TABLE IF NOT EXISTS curation_log (
     similarity  real,
     created_at  timestamptz NOT NULL DEFAULT now()
 );
+
+-- Upgrade an existing installation to the current source-document delete behavior.
+ALTER TABLE memory_entries DROP CONSTRAINT IF EXISTS memory_entries_source_doc_id_fkey;
+ALTER TABLE memory_entries
+    ADD CONSTRAINT memory_entries_source_doc_id_fkey
+    FOREIGN KEY (source_doc_id) REFERENCES source_docs(id) ON DELETE SET NULL;
 
 -- Vector index for cosine nearest-neighbour search.
 CREATE INDEX IF NOT EXISTS idx_memory_embedding

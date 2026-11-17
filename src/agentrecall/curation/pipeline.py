@@ -140,6 +140,17 @@ class CurationPipeline:
         normalized.embedding = self.embedder.embed_query(
             f"{normalized.subject} {normalized.claim} {normalized.body}"
         )
+        if normalized.source_doc_id:
+            with self.engine.connect() as conn:
+                source_hash = conn.execute(
+                    text("SELECT content_hash FROM source_docs WHERE id = :id"),
+                    {"id": normalized.source_doc_id},
+                ).scalar_one_or_none()
+            provenance = dict(normalized.provenance)
+            provenance["source_doc_id"] = normalized.source_doc_id
+            if source_hash:
+                provenance["source_content_hash"] = source_hash
+            normalized.provenance = provenance
         return normalized
 
     # ---------------------------------------------------------------- ingest
