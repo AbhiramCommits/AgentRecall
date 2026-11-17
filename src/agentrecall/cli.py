@@ -7,6 +7,7 @@ from collections import Counter
 import typer
 from sqlalchemy import text
 
+from agentrecall.agent.session import AgentSession, session_traces
 from agentrecall.config import get_settings
 from agentrecall.curation.pipeline import CurationPipeline
 from agentrecall.data.corpus import generate_corpus, insert_source_docs
@@ -128,6 +129,62 @@ def mutate_sources() -> None:
     typer.echo(f"mutated source documents: {len(touched)}")
     for doc_id in touched:
         typer.echo(f"  {doc_id}")
+
+
+@app.command()
+def ask(
+    request: str = typer.Argument(..., help="Natural-language engineering request."),
+    session: str = typer.Option("S1", help="Session identifier."),
+    memory: bool = typer.Option(True, "--memory/--no-memory", help="Enable memory recall/write."),
+) -> None:
+    """Ask the agent a request and print the answer plus its resolution trace."""
+    agent = AgentSession(session, memory_enabled=memory)
+    answer = agent.ask(request)
+    agent.close()
+    typer.echo(answer)
+    typer.echo("")
+    trace = agent.get_trace()
+    if trace:
+        _print_trace(trace)
+
+
+@app.command()
+def trace(session: str = typer.Option("S1", help="Session identifier to replay.")) -> None:
+    """Replay all stored resolution traces for a session."""
+    rows = session_traces(get_engine(), session)
+    if not rows:
+        typer.echo(f"no traces for session {session}")
+        raise typer.Exit(code=1)
+    for row in rows:
+        _print_trace(row)
+        typer.echo("")
+
+
+def _print_trace(trace: dict) -> None:
+    hits = trace.get("memory_hits") or []
+    if isinstance(hits, str):
+        import json
+
+        hits = json.loads(hits)
+    steps = trace.get("steps") or []
+    if isinstance(steps, str):
+        import json
+
+        steps = json.loads(steps)
+    typer.echo(
+        f"trace {trace['id']} | intent={trace['intent']} | tool={trace['chosen_tool']} | "
+        f"outcome={trace['outcome']} | {trace['latency_ms']} ms"
+    )
+    for index, step in enumerate(steps, start=1):
+        typer.echo(f"  {index}. {step.get('node')}: {step.get('detail')}")
+    if hits:
+        typer.echo("  memory hits:")
+        for hit in hits:
+            typer.echo(
+                f"    [{hit['tier']} {hit['score']:.3f}] {hit.get('text', '')[:120]}"
+            )
+    else:
+        typer.echo("  memory hits: none")
 
 
 @maintain_app.command("stale")
