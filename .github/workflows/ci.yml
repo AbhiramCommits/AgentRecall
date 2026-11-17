@@ -1,0 +1,57 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: agentrecall
+          POSTGRES_USER: agentrecall
+          POSTGRES_PASSWORD: agentrecall
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U agentrecall -d agentrecall"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      AGENTRECALL_PG_DSN: postgresql+psycopg://agentrecall:agentrecall@localhost:5433/agentrecall
+      AGENTRECALL_REDIS_URL: redis://localhost:6380/1
+      AGENTRECALL_TEST_PG_DSN: postgresql+psycopg://agentrecall:agentrecall@localhost:5433/agentrecall
+      AGENTRECALL_TEST_REDIS_URL: redis://localhost:6380/1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check .
+      - name: Test with coverage
+        run: pytest -q --cov=src/agentrecall --cov-report=term-missing --cov-fail-under=85
+      - name: Run evaluation
+        run: agentrecall eval run --seed 7
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentrecall-results
+          path: results/

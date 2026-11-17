@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections import Counter
 
 import typer
@@ -10,9 +11,10 @@ from sqlalchemy import text
 from agentrecall.agent.session import AgentSession, session_traces
 from agentrecall.config import get_settings
 from agentrecall.curation.pipeline import CurationPipeline
-from agentrecall.data.corpus import generate_corpus, insert_source_docs
+from agentrecall.data.corpus import generate_corpus, insert_source_docs, mutate_source_docs
 from agentrecall.db import get_engine, healthcheck, init_schema
 from agentrecall.embeddings import get_embedder
+from agentrecall.eval.harness import run_all
 from agentrecall.maintenance.jobs import (
     audit,
     compact,
@@ -21,7 +23,6 @@ from agentrecall.maintenance.jobs import (
 )
 from agentrecall.maintenance.report import write_report
 from agentrecall.memory.semantic import SemanticMemory
-from agentrecall.models import utcnow
 
 app = typer.Typer(
     name="agentrecall",
@@ -30,8 +31,9 @@ app = typer.Typer(
 )
 maintain_app = typer.Typer(help="Knowledge-repository maintenance jobs.")
 app.add_typer(maintain_app, name="maintain")
+eval_app = typer.Typer(help="Offline evaluation benchmark.")
+app.add_typer(eval_app, name="eval")
 
-MUTATION_MARKER = " Revised measurement note: dose drift observed during re-qualification."
 
 
 @app.command("init-db")
@@ -98,34 +100,10 @@ def mutate_sources() -> None:
     """Deterministically edit a fixed subset of source docs without refreshing their hashes."""
     engine = get_engine(get_settings())
     init_schema(engine)
-    with engine.connect() as conn:
-        ids = [
-            str(row[0])
-            for row in conn.execute(
-                text(
-                    "SELECT id FROM source_docs WHERE id LIKE 'doc-dose-%' "
-                    "ORDER BY id LIMIT 3"
-                )
-            )
-        ]
-    if not ids:
+    touched = mutate_source_docs(engine, limit=3)
+    if not touched:
         typer.echo("no source documents found; run ingest-corpus first")
         raise typer.Exit(code=1)
-    touched: list[str] = []
-    with engine.begin() as conn:
-        for doc_id in ids:
-            body = conn.execute(
-                text("SELECT body FROM source_docs WHERE id = :id"), {"id": doc_id}
-            ).scalar_one()
-            if MUTATION_MARKER.strip() in body:
-                continue
-            conn.execute(
-                text(
-                    "UPDATE source_docs SET body = :body, updated_at = :updated_at WHERE id = :id"
-                ),
-                {"body": body + MUTATION_MARKER, "updated_at": utcnow(), "id": doc_id},
-            )
-            touched.append(doc_id)
     typer.echo(f"mutated source documents: {len(touched)}")
     for doc_id in touched:
         typer.echo(f"  {doc_id}")
@@ -163,13 +141,9 @@ def trace(session: str = typer.Option("S1", help="Session identifier to replay."
 def _print_trace(trace: dict) -> None:
     hits = trace.get("memory_hits") or []
     if isinstance(hits, str):
-        import json
-
         hits = json.loads(hits)
     steps = trace.get("steps") or []
     if isinstance(steps, str):
-        import json
-
         steps = json.loads(steps)
     typer.echo(
         f"trace {trace['id']} | intent={trace['intent']} | tool={trace['chosen_tool']} | "
@@ -250,6 +224,31 @@ def maintain_all() -> None:
     for kind, count in result.counts.items():
         typer.echo(f"  {kind:<28} {count:>5}")
     typer.echo(f"wrote {json_path} and {md_path}")
+
+
+@eval_app.command("run")
+def eval_run(
+    seed: int = typer.Option(7, help="Deterministic benchmark seed."),
+    results_dir: str = typer.Option("results", help="Directory for result artifacts."),
+) -> None:
+    """Run the full A-E evaluation and write results/eval_results.json + eval_report.md."""
+    results = run_all(seed=seed, results_dir=results_dir)
+    tasks = results["task_success"]
+    retrieval = results["retrieval"]
+    curation = results["curation"]
+    typer.echo(
+        f"tasks: ON={tasks['on_success_rate']:.3f} OFF={tasks['off_success_rate']:.3f} "
+        f"delta={tasks['delta']:+.3f}"
+    )
+    typer.echo(
+        f"retrieval p@5: raw={retrieval['raw']['precision_at_k']:.3f} "
+        f"curated={retrieval['curated']['precision_at_k']:.3f}"
+    )
+    typer.echo(
+        f"curation: entries {curation['entries_before']} -> {curation['entries_after']} "
+        f"({curation['reduction_pct']:.1f}% reduction)"
+    )
+    typer.echo(f"wrote {results['_paths']['json']} and {results['_paths']['markdown']}")
 
 
 if __name__ == "__main__":

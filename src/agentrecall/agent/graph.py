@@ -139,8 +139,20 @@ def _best_memory_answer(
     intent: str, hits: list[MemoryHit], slots: dict[str, Any]
 ) -> MemoryHit | None:
     if intent == "summarize_prior_session":
+        stack = str(slots.get("stack", "")).lower()
         for hit in hits:
-            if hit.tier == MemoryTier.EPISODIC and hit.score > 0:
+            if (
+                hit.tier == MemoryTier.EPISODIC
+                and hit.score > 0
+                and (not stack or stack in hit.text.lower())
+            ):
+                return hit
+        for hit in hits:
+            if (
+                hit.tier == MemoryTier.SEMANTIC
+                and hit.score >= 0.2
+                and (not stack or stack in hit.text.lower())
+            ):
                 return hit
         return None
     if intent != "lookup_recipe_parameter":

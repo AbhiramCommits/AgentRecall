@@ -240,6 +240,44 @@ def generate_corpus(seed: int = 7) -> tuple[list[SourceDoc], list[CorpusCandidat
     return build_source_docs(seed), build_candidates(seed)
 
 
+MUTATION_MARKER = " Revised measurement note: dose drift observed during re-qualification."
+
+
+def mutate_source_docs(engine, limit: int = 3) -> list[str]:
+    """Deterministically edit the first N dose docs, leaving content_hash stale on purpose."""
+    from sqlalchemy import text
+
+    from agentrecall.models import utcnow
+
+    with engine.connect() as conn:
+        ids = [
+            str(row[0])
+            for row in conn.execute(
+                text(
+                    "SELECT id FROM source_docs WHERE id LIKE 'doc-dose-%' "
+                    "ORDER BY id LIMIT :limit"
+                ),
+                {"limit": limit},
+            )
+        ]
+    touched: list[str] = []
+    with engine.begin() as conn:
+        for doc_id in ids:
+            body = conn.execute(
+                text("SELECT body FROM source_docs WHERE id = :id"), {"id": doc_id}
+            ).scalar_one()
+            if MUTATION_MARKER.strip() in body:
+                continue
+            conn.execute(
+                text(
+                    "UPDATE source_docs SET body = :body, updated_at = :updated_at WHERE id = :id"
+                ),
+                {"body": body + MUTATION_MARKER, "updated_at": utcnow(), "id": doc_id},
+            )
+            touched.append(doc_id)
+    return touched
+
+
 def insert_source_docs(engine, docs: list[SourceDoc]) -> int:
     """Upsert source documents and return the number written."""
     from sqlalchemy import text
