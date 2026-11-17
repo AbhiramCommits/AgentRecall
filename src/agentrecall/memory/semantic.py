@@ -225,7 +225,12 @@ class SemanticMemory:
         """Fetch one entry by id, or ``None`` when absent."""
         with self.engine.connect() as conn:
             row = conn.execute(
-                text("SELECT * FROM memory_entries WHERE id = CAST(:id AS uuid)"),
+                text(
+                    "SELECT id, tier, subject, claim, body, embedding::text AS embedding_text, "
+                    "source_doc_id, session_id, version, status, supersedes, provenance, "
+                    "confidence, access_count, created_at, last_used_at, content_hash "
+                    "FROM memory_entries WHERE id = CAST(:id AS uuid)"
+                ),
                 {"id": entry_id},
             ).mappings().first()
         return self._row_to_record(row) if row else None
