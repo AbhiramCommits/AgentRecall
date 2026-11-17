@@ -323,6 +323,13 @@ class AgentGraph:
         return updates
 
     def route_tool_node(self, state: AgentState) -> AgentState:
+        if state.get("plan") == "recall_again":
+            step = {
+                "node": "route_tool",
+                "detail": f"required slots missing: {state.get('missing_slots', [])}; recall again",
+                "data": {"missing_slots": state.get("missing_slots", [])},
+            }
+            return {"steps": [*state.get("steps", []), step]}
         if state.get("plan") != "tool":
             step = {"node": "route_tool", "detail": "no tool required", "data": {}}
             return {"steps": [*state.get("steps", []), step]}
@@ -477,12 +484,12 @@ class AgentGraph:
             {"recall_memory": "recall_memory", "plan": "plan"},
         )
         builder.add_edge("recall_memory", "plan")
+        builder.add_edge("plan", "route_tool")
         builder.add_conditional_edges(
-            "plan",
-            lambda s: "recall_memory" if s.get("plan") == "recall_again" else "route_tool",
-            {"recall_memory": "recall_memory", "route_tool": "route_tool"},
+            "route_tool",
+            lambda s: "recall_memory" if s.get("plan") == "recall_again" else "execute",
+            {"recall_memory": "recall_memory", "execute": "execute"},
         )
-        builder.add_edge("route_tool", "execute")
         builder.add_edge("execute", "reflect_and_write")
         builder.add_edge("reflect_and_write", "summarize_turn")
         builder.add_edge("summarize_turn", END)

@@ -1,7 +1,7 @@
 # AgentRecall Evaluation Report
 
 Seed: `7`
-Generated: 2026-11-17T00:29:19.623198+00:00
+Generated: 2026-11-17T00:31:55.023954+00:00
 
 ## A. Multi-session task success (memory ON vs OFF)
 
@@ -63,11 +63,11 @@ Decision counts: `accept`=20, `merge`=10, `skip_duplicate`=10, `supersede`=20
 
 | Metric | Memory ON | Memory OFF |
 | --- | ---: | ---: |
-| ask p50 (ms) | 15.00 | 2.00 |
-| ask p95 (ms) | 37.15 | 5.00 |
+| ask p50 (ms) | 13.00 | 2.00 |
+| ask p95 (ms) | 39.10 | 4.00 |
 | asks measured | 120 | 120 |
 
-Mean direct memory recall latency: **8.63 ms** (12 samples).
+Mean direct memory recall latency: **8.60 ms** (12 samples).
 
 Reproduce with:
 

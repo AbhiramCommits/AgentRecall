@@ -28,6 +28,9 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.4",
 ]
+llm = [
+    "langchain-openai>=0.2",
+]
 
 [project.scripts]
 agentrecall = "agentrecall.cli:app"
