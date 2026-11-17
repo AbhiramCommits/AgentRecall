@@ -1,0 +1,31 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: agentrecall-db
+    environment:
+      POSTGRES_DB: agentrecall
+      POSTGRES_USER: agentrecall
+      POSTGRES_PASSWORD: agentrecall
+    ports:
+      - "5433:5432"
+    volumes:
+      - agentrecall_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentrecall -d agentrecall"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: agentrecall-redis
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  agentrecall_pgdata:
